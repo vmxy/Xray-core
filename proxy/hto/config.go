@@ -1,6 +1,10 @@
 package hto
 
-/*
+import (
+	protocol "github.com/xtls/xray-core/common/protocol"
+	"google.golang.org/protobuf/proto"
+)
+
 func (a *Account) Equals(another protocol.Account) bool {
 	if account, ok := another.(*Account); ok {
 		return a.Username == account.Username
@@ -27,4 +31,3 @@ func (sc *ServerConfig) HasAccount(username, password string) bool {
 	}
 	return p == password
 }
-*/

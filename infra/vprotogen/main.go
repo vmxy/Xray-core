@@ -231,7 +231,7 @@ Download it from https://github.com/protocolbuffers/protobuf/releases
 		fmt.Println(walkErr)
 		os.Exit(1)
 	}
-
+	fmt.Printf("pwd: %s %v\n", pwd, protoFilesMap)
 	for _, files := range protoFilesMap {
 		for _, relProtoFile := range files {
 			args := []string{
