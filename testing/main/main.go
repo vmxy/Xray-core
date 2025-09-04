@@ -7,10 +7,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -20,8 +23,8 @@ import (
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/core"
+	_ "github.com/xtls/xray-core/main/distro/all"
 	"github.com/xtls/xray-core/proxy/freedom"
-	"github.com/xtls/xray-core/proxy/hto"
 	v2http "github.com/xtls/xray-core/proxy/http"
 	"github.com/xtls/xray-core/testing/scenarios"
 	v2httptest "github.com/xtls/xray-core/testing/servers/http"
@@ -50,106 +53,53 @@ func init() {
 	case "client":
 		clientFlags.Parse(os.Args[2:])
 		fmt.Println("Connecting to:", *clientHost)
+	case "proxy":
+		clientFlags.Parse(os.Args[2:])
+		fmt.Println("create proxy:", *clientHost)
 	default:
 		fmt.Println("Unknown subcommand:", os.Args[1])
-		os.Exit(1)
+		//os.Exit(1)
 	}
-	fmt.Printf("xxx %v \r\n", os.Args[1:])
 	//flag.PrintDefaults()
 }
 func main() {
-	fmt.Println("main args mode ", os.Args[1:])
+	/* fmt.Println("main args mode ", os.Args[1])
 	mode := os.Args[1]
 	switch mode {
 	case "server":
 	case "client":
-	}
+	case "proxy":
+		StartProxy()
+	} */
 	StartProxy()
 
 }
 func StartProxy() {
-	httpServerPort := tcp.PickPort()
-	httpServer := &v2httptest.Server{
-		Port:        httpServerPort,
-		PathHandler: make(map[string]http.HandlerFunc),
+	log.Println("start proxy")
+	// 创建基础配置 转换为 Xray 配置
+	coreConfig, err := NewConfig().Build()
+	if err != nil {
+		log.Fatalf("Failed to build config: %v", err)
 	}
-	_, err := httpServer.Start()
-	fmt.Println("http server port ", httpServerPort)
-	common.Must(err)
-	defer httpServer.Close()
-
-	proxyPort1 := tcp.PickPort()
-	fmt.Println("proxy1 server port ", proxyPort1)
-	proxyServerConfig := &core.Config{
-		Inbound: []*core.InboundHandlerConfig{
-			{
-				ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
-					PortList: &net.PortList{Range: []*net.PortRange{net.SinglePortRange(proxyPort1)}},
-					Listen:   net.NewIPOrDomain(net.LocalHostIP),
-				}),
-				ProxySettings: serial.ToTypedMessage(&v2http.ServerConfig{}),
-			},
-		},
-		Outbound: []*core.OutboundHandlerConfig{
-			{
-				Tag:           "hto",
-				ProxySettings: serial.ToTypedMessage(&hto.ClientConfig{}),
-			},
-		},
+	log.Println("core.New config")
+	// 创建并启动实例
+	instance, err := core.New(coreConfig)
+	if err != nil {
+		log.Fatalf("Failed to create instance: %v", err)
 	}
-	proxyServers, err := scenarios.InitializeServerConfigs(proxyServerConfig)
-	common.Must(err)
-	//	defer scenarios.CloseAllServers(proxyServers)
-	fmt.Println("proxy1 server count ", len(proxyServers))
 
-	proxyPort2 := tcp.PickPort()
-	fmt.Println("proxy2 server port ", proxyPort2)
-	proxyServerConfig2 := &core.Config{
-		Inbound: []*core.InboundHandlerConfig{
-			{
-				ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
-					PortList: &net.PortList{Range: []*net.PortRange{net.SinglePortRange(proxyPort2)}},
-					Listen:   net.NewIPOrDomain(net.LocalHostIP),
-				}),
-				ProxySettings: serial.ToTypedMessage(&v2http.ServerConfig{}),
-			},
-		},
-		Outbound: []*core.OutboundHandlerConfig{
-			{
-				ProxySettings: serial.ToTypedMessage(&freedom.Config{}),
-			},
-		},
+	if err := instance.Start(); err != nil {
+		log.Fatalf("Failed to start: %v", err)
 	}
-	proxyServers2, err := scenarios.InitializeServerConfigs(proxyServerConfig2)
-	common.Must(err)
-	//	defer scenarios.CloseAllServers(proxyServers)
-	fmt.Println("proxy2 server count ", len(proxyServers2))
-	{
-		/// 模拟发起http请求
-		transport := &http.Transport{
-			Proxy: func(req *http.Request) (*url.URL, error) {
-				return url.Parse("http://127.0.0.1:" + proxyPort1.String())
-			},
-		}
+	defer instance.Close()
 
-		client := &http.Client{
-			Transport: transport,
-		}
-
-		resp, err := client.Get("http://127.0.0.1:" + httpServerPort.String())
-		common.Must(err)
-		if resp.StatusCode != 200 {
-			fmt.Println("status: ", resp.StatusCode)
-		}
-
-		content, err := io.ReadAll(resp.Body)
-		common.Must(err)
-		if string(content) != "Home" {
-
-		}
-		fmt.Println("------body: ", string(content))
-	}
-	select {}
+	log.Println("Proxy server started")
+	log.Println("Press Ctrl+C to stop")
+	// 等待中断信号
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+	log.Println("Shutting down...")
 }
 func TestHttpConformance() {
 	httpServerPort := tcp.PickPort()
