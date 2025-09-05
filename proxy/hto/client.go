@@ -75,7 +75,7 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 	if !ob.Target.IsValid() {
 		return errors.New("target not specified.")
 	}
-	ob.Name = "http"
+	ob.Name = "hto"
 	ob.CanSpliceCopy = 2
 	target := ob.Target
 	targetAddr := target.NetAddr()
