@@ -81,17 +81,19 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 	ob.CanSpliceCopy = 2
 	target := ob.Target
 	targetAddr := target.NetAddr()
-	//fmt.Println("use hto client connect server ", targetAddr)
 	if target.Network == net.Network_UDP {
 		return errors.New("UDP is not supported by HTTP outbound")
 	}
 
 	var user *protocol.MemoryUser
 	var conn stat.Connection
-	time.Sleep(time.Millisecond * 1)
-
+START_READ:
+	time.Sleep(time.Microsecond * 100)
 	mbuf, _ := link.Reader.ReadMultiBuffer()
 	len := mbuf.Len()
+	if len < 28 {
+		goto START_READ
+	}
 	firstPayload := bytespool.Alloc(len)
 	mbuf, _ = buf.SplitBytes(mbuf, firstPayload)
 	firstPayload = firstPayload[:len]
@@ -108,7 +110,6 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 		server := c.serverPicker.PickServer()
 		dest := server.Destination()
 		user = server.PickUser()
-		fmt.Println("mm 0-- ", dest, targetAddr, string(firstPayload))
 		netConn, err := setUpHTTPTunnel(ctx, dest, targetAddr, user, dialer, header, firstPayload)
 		if netConn != nil {
 			/* if _, ok := netConn.(*http2Conn); !ok {
@@ -213,7 +214,6 @@ func fillRequestHeader(ctx context.Context, header []*Header) ([]*Header, error)
 // setUpHTTPTunnel will create a socket tunnel via HTTP CONNECT method
 func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, user *protocol.MemoryUser, dialer internet.Dialer, header []*Header, firstPayload []byte) (net.Conn, error) {
 	request, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(firstPayload)))
-	fmt.Println("xxfirstPayload", string(firstPayload), err)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +232,6 @@ func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, u
 
 	for _, h := range header {
 		req.Header.Set(h.Key, h.Value)
-		fmt.Println("set key", h.Key, h.Value)
 	}
 	fullURL := fmt.Sprintf("http://%s%s", request.Host, request.URL.Path)
 	req.Header.Set("xto", fullURL)
