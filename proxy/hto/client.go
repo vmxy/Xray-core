@@ -91,7 +91,7 @@ START_READ:
 	time.Sleep(time.Microsecond * 100)
 	mbuf, _ := link.Reader.ReadMultiBuffer()
 	len := mbuf.Len()
-	if len < 28 {
+	if len < 42 {
 		goto START_READ
 	}
 	firstPayload := bytespool.Alloc(len)
@@ -215,6 +215,7 @@ func fillRequestHeader(ctx context.Context, header []*Header) ([]*Header, error)
 func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, user *protocol.MemoryUser, dialer internet.Dialer, header []*Header, firstPayload []byte) (net.Conn, error) {
 	request, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(firstPayload)))
 	if err != nil {
+		errors.LogWarning(ctx, "firstPayload is error ", err.Error(), " ", string(firstPayload))
 		return nil, err
 	}
 	req := &http.Request{
