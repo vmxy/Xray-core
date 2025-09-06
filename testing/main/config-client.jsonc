@@ -1,53 +1,72 @@
 {
-    "log": {
-        "loglevel": "info"
+  "log": {
+    "loglevel": "debug"
+  },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": "1091",
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true,
+        "ip": "127.0.0.1"
+      }
     },
-    "inbounds": [
-        {
-            "listen": "127.0.0.1",
-            "port": "1091",
-            "protocol": "socks",
-            "settings": {
-                "auth": "noauth",
-                "udp": true,
-                "ip": "127.0.0.1"
-            }
-        },
-        {
-            "listen": "127.0.0.1",
-            "port": "1092",
-            "protocol": "http",
-            "settings":{
-                "auth": "noauth"
-            }
-        }
-    ],
-    "outbounds": [
-        {
-            "protocol": "socks",
-            "settings": {
-                "servers": [
-                    {
-                        "address": "127.0.0.1",
-                        "port": 1101,
-                        "users": [
-                           {
-                               "user": "app",
-                               "pass": "123456"
-                           }
-                        ]
-                    }
-                ]
-            },
-            "streamSettings": {
-                "network": "tcp",
-                "security": "none"
-            },
-            "tag": "proxy"
-        },
-        {
-            "protocol": "freedom",
-            "tag": "direct"
-        }
-    ]
+    {
+      "listen": "127.0.0.1",
+      "port": "1092",
+      "protocol": "http",
+      "settings": {
+        "auth": "noauth"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "hto",
+      "tag": "proxy",
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1",
+            "port": 1103,
+            "users": [
+              {
+                "user": "app",
+                "pass": "123456"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      }
+      
+    },
+    {
+      "protocol": "socks", // 上层代理协议
+      "tag": "local-proxy", // 必须与 proxySettings.tag 匹配
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1", // 代理服务器地址
+            "port": 1101, // 代理服务器端口
+            "users": [
+                {
+                     "user": "app",
+                    "pass": "123456"
+                }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    }
+  ]
 }

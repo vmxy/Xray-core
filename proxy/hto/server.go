@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -91,7 +93,7 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Con
 // Other parts are the same as the process function
 func (s *Server) ProcessWithFirstbyte(ctx context.Context, network net.Network, conn stat.Connection, dispatcher routing.Dispatcher, firstbyte ...byte) error {
 	inbound := session.InboundFromContext(ctx)
-	inbound.Name = "http"
+	inbound.Name = "hto"
 	inbound.CanSpliceCopy = 2
 	inbound.User = &protocol.MemoryUser{
 		Level: s.config.UserLevel,
@@ -112,7 +114,11 @@ Start:
 	if err := conn.SetReadDeadline(time.Now().Add(s.policy().Timeouts.Handshake)); err != nil {
 		errors.LogInfoInner(ctx, err, "failed to set read deadline")
 	}
-
+	/* payload1 := make([]byte, buf.Size)
+	if size, err := reader.Read(payload1); err == nil {
+		payload1 = payload1[:size]
+	}
+	request, err := http.ReadRequest(bufio.NewReader(bytes.NewBuffer(payload1))) */
 	request, err := http.ReadRequest(reader)
 	if err != nil {
 		trace := errors.New("failed to read http request").Base(err)
@@ -123,9 +129,9 @@ Start:
 	}
 
 	if len(s.config.Accounts) > 0 {
-		user, pass, ok := parseBasicAuth(request.Header.Get("Proxy-Authorization"))
+		user, pass, ok := parseBasicAuth(request.Header.Get("Authorization"))
 		if !ok || !s.config.HasAccount(user, pass) {
-			return common.Error2(conn.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"proxy\"\r\n\r\n")))
+			return common.Error2(conn.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\nAuthenticate: Basic realm=\"proxy\"\r\n\r\n")))
 		}
 		if inbound != nil {
 			inbound.User.Email = user
@@ -155,39 +161,72 @@ Start:
 		Status: log.AccessAccepted,
 		Reason: "",
 	})
-
-	if strings.EqualFold(request.Method, "CONNECT") {
-		return s.handleConnect(ctx, request, reader, conn, dest, dispatcher, inbound)
-	}
-
-	keepAlive := (strings.TrimSpace(strings.ToLower(request.Header.Get("Proxy-Connection"))) == "keep-alive")
-
-	err = s.handlePlainHTTP(ctx, request, conn, dest, dispatcher)
-	if err == errWaitAnother {
-		if keepAlive {
-			goto Start
+	/*
+		if strings.EqualFold(request.Method, "CONNECT") {
+			return s.handleConnect(ctx, request, reader, conn, dest, dispatcher, inbound)
 		}
-		err = nil
+
+		keepAlive := (strings.TrimSpace(strings.ToLower(request.Header.Get("Proxy-Connection"))) == "keep-alive")
+
+		err = s.handlePlainHTTP(ctx, request, conn, dest, dispatcher)
+		if err == errWaitAnother {
+			if keepAlive {
+				goto Start
+			}
+			err = nil
+		}
+
+		return err */
+	xto := request.Header.Get("Xto")
+	if xto == "" {
+		keepAlive := (strings.TrimSpace(strings.ToLower(request.Header.Get("Connection"))) == "keep-alive")
+		err = s.handlePlainHTTP(ctx, request, conn, dest, dispatcher)
+		if err == errWaitAnother {
+			if keepAlive {
+				goto Start
+			}
+			err = nil
+		}
+		return err
 	}
-
-	return err
+	payload := []byte(s.buildNewPayload(request))
+	//multiReader := io.MultiReader(bytes.NewReader(payload), reader)
+	//reader = bufio.NewReaderSize(multiReader, buf.Size)
+	return s.handleConnect(ctx, payload, reader, conn, dest, dispatcher, inbound)
 }
-
-func (s *Server) handleConnect(ctx context.Context, _ *http.Request, buffer *bufio.Reader, conn stat.Connection, dest net.Destination, dispatcher routing.Dispatcher, inbound *session.Inbound) error {
-	_, err := conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
+func (s *Server) buildNewPayload(request *http.Request) string {
+	//request.Header.Set("User-Agent", "curl/8.7.1")
+	xto := request.Header.Get("Xto")
+	info, _ := url.Parse(xto)
+	var payloads []string
+	payloads = append(payloads, fmt.Sprintf("%s %s %s", request.Method, request.URL.String(), request.Proto))
+	payloads = append(payloads, fmt.Sprintf("Host: %s", info.Hostname()))
+	for k, v := range request.Header {
+		if k == "Xto" || k == "Authorization" {
+			continue
+		}
+		payloads = append(payloads, fmt.Sprintf("%s: %s", k, strings.Join(v, ",")))
+	}
+	payloads = append(payloads, "\r\n")
+	return strings.Join(payloads, "\r\n")
+}
+func (s *Server) handleConnect(ctx context.Context, payload []byte, buffer *bufio.Reader, conn stat.Connection, dest net.Destination, dispatcher routing.Dispatcher, inbound *session.Inbound) error {
+	/* _, err := conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
 	if err != nil {
 		return errors.New("failed to write back OK response").Base(err)
-	}
+	} */
 
 	reader := buf.NewReader(conn)
-	if buffer.Buffered() > 0 {
+	/* 	if buffer.Buffered() > 0 {
 		payload, err := buf.ReadFrom(io.LimitReader(buffer, int64(buffer.Buffered())))
 		if err != nil {
 			return err
 		}
 		reader = &buf.BufferedReader{Reader: reader, Buffer: payload}
 		buffer = nil
-	}
+	} */
+	payloadr, _ := buf.ReadFrom(bufio.NewReader(bytes.NewBuffer(payload)))
+	reader = &buf.BufferedReader{Reader: reader, Buffer: payloadr}
 
 	if inbound.CanSpliceCopy == 2 {
 		inbound.CanSpliceCopy = 1

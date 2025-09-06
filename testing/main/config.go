@@ -208,7 +208,7 @@ func loadServerConfig() *core.Config {
 	jsonstr := `
 {
     "log": {
-        "loglevel": "info"
+        "loglevel": "debug"
     },
     "inbounds": [
         {
@@ -227,10 +227,25 @@ func loadServerConfig() *core.Config {
                 "ip": "127.0.0.1"
             }
         },
-        {
+		{
             "listen": "127.0.0.1",
             "port": "1102",
             "protocol": "http",
+            "settings": {
+                "auth": "password",
+                "accounts": [
+                    {
+                        "user": "app",
+                        "pass": "123456"
+                    }
+                ]
+            }
+        },
+        {
+            "listen": "127.0.0.1",
+            "port": "1103",
+            "protocol": "hto",
+			"tag": "proxy",
             "settings": {
                 "auth": "password",
                 "accounts": [
@@ -271,7 +286,6 @@ func loadServerConfig() *core.Config {
     ]
 }
 `
-	fmt.Println("jsonstr", jsonstr)
 	cfg, _ := JsonToCoreConfig(jsonstr)
 	return cfg
 }
